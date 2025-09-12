@@ -2,18 +2,18 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Lưu tọa độ</title>
+  <title>Lưu tọa độ vào Google Sheets</title>
 </head>
 <body>
   <h2>Lưu tọa độ bạn đã ghé</h2>
   <input id="placeName" type="text" placeholder="Nhập tên địa điểm">
-  <button onclick="saveLocation()">Lưu tọa độ</button>
+  <button onclick="saveLocation()">Lưu vào Google Sheets</button>
 
-  <h3>Danh sách đã lưu:</h3>
-  <ul id="list"></ul>
+  <h3>Kết quả:</h3>
+  <div id="status"></div>
 
   <script>
-    let savedLocations = [];
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzadwbBz22bHyWuJdBXov0VhUrpQ4Gm9T98fxRZd1FfsWOo8wlWtTppJ6zKl3oKFRSK/exec";
 
     function saveLocation() {
       const name = document.getElementById("placeName").value;
@@ -28,18 +28,26 @@
           const lon = pos.coords.longitude;
           const time = new Date().toISOString();
 
-          const entry = { name, lat, lon, time };
-          savedLocations.push(entry);
+          const data = { name, lat, lon, time };
 
-          // Cập nhật UI
-          const li = document.createElement("li");
-          li.textContent = `${time} - ${name} (${lat}, ${lon})`;
-          document.getElementById("list").appendChild(li);
+          fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify(data),
+            headers: { "Content-Type": "application/json" }
+          })
+          .then(res => res.text())
+          .then(txt => {
+            document.getElementById("status").innerText = "✅ Đã lưu: " + name;
+          })
+          .catch(err => {
+            document.getElementById("status").innerText = "❌ Lỗi: " + err;
+          });
 
-          console.log("Đã lưu:", entry);
+        }, err => {
+          alert("Không lấy được tọa độ: " + err.message);
         });
       } else {
-        alert("Trình duyệt không hỗ trợ lấy vị trí!");
+        alert("Trình duyệt không hỗ trợ GPS!");
       }
     }
   </script>
