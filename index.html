@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Lưu tọa độ</title>
+</head>
+<body>
+  <h2>Lưu tọa độ bạn đã ghé</h2>
+  <input id="placeName" type="text" placeholder="Nhập tên địa điểm">
+  <button onclick="saveLocation()">Lưu tọa độ</button>
+
+  <h3>Danh sách đã lưu:</h3>
+  <ul id="list"></ul>
+
+  <script>
+    let savedLocations = [];
+
+    function saveLocation() {
+      const name = document.getElementById("placeName").value;
+      if (!name) {
+        alert("Hãy nhập tên địa điểm!");
+        return;
+      }
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const time = new Date().toISOString();
+
+          const entry = { name, lat, lon, time };
+          savedLocations.push(entry);
+
+          // Cập nhật UI
+          const li = document.createElement("li");
+          li.textContent = `${time} - ${name} (${lat}, ${lon})`;
+          document.getElementById("list").appendChild(li);
+
+          console.log("Đã lưu:", entry);
+        });
+      } else {
+        alert("Trình duyệt không hỗ trợ lấy vị trí!");
+      }
+    }
+  </script>
+</body>
+</html>
