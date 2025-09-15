@@ -49,18 +49,30 @@
 
   <h3>Kết quả:</h3>
   <div id="status"></div>
+  <div id="geoHelp" class="tip" style="display:none">
+    <b>Truy cập vị trí đang bị chặn.</b>
+    <p id="geoSteps" class="muted" style="margin:6px 0 10px"></p>
+    <div class="row">
+      <button id="retryGPS">Thử lại yêu cầu GPS</button>
+      <button id="openSiteSettings" title="Mở hướng dẫn bật quyền">Hướng dẫn bật quyền</button>
+    </div>
+  </div>
   <iframe id="map" class="map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
 
   <script>
     // 👉 DÁN URL Web App của Apps Script vào đây:
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec"; // ⚠️ BẮT BUỘC: dán URL triển khai Web App (phiên bản Execute as: Me; Access: Anyone)
+    const SCRIPT_URL = ""; // ⚠️ BẮT BUỘC: dán URL triển khai Web App (phiên bản Execute as: Me; Access: Anyone)
 
     // Tuỳ chọn: đặt một API token đơn giản để hạn chế spam (phải trùng với Apps Script)
-    const TOKEN = "abc123"; // ví dụ: "abc123" (để trống nếu không dùng)
+    const TOKEN = ""; // ví dụ: "abc123" (để trống nếu không dùng)
 
     const btn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
     const mapEl = document.getElementById("map");
+    const geoHelpEl = document.getElementById("geoHelp");
+    const geoStepsEl = document.getElementById("geoSteps");
+    const retryBtn = document.getElementById("retryGPS");
+    const openSiteBtn = document.getElementById("openSiteSettings");
 
     const placeInput = document.getElementById("placeName");
     const noteInput = document.getElementById("note");
@@ -84,6 +96,63 @@
           reject(new Error("Trình duyệt không hỗ trợ GPS."));
           return;
         }
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+    }
+
+    function detectBrowser() {
+      const ua = navigator.userAgent.toLowerCase();
+      const isIOS = /iphone|ipad|ipod/.test(ua);
+      if (ua.includes('edg/')) return 'edge';
+      if (ua.includes('chrome') && !ua.includes('edg/') && !ua.includes('opr/')) return isIOS ? 'ios-chrome' : 'chrome';
+      if (ua.includes('safari') && !ua.includes('chrome')) return isIOS ? 'ios-safari' : 'safari';
+      if (ua.includes('firefox')) return 'firefox';
+      return 'other';
+    }
+
+    function showGeoHelp() {
+      const b = detectBrowser();
+      let steps = '';
+      switch (b) {
+        case 'chrome':
+        case 'edge':
+          steps = 'Nhấn vào biểu tượng ổ khoá trên thanh địa chỉ → Quyền → Vị trí → Cho phép. Sau đó tải lại trang.';
+          break;
+        case 'firefox':
+          steps = 'Nhấn vào biểu tượng khiên/ổ khoá → Quyền → Vị trí → Cho phép cho trang này. Rồi tải lại trang.';
+          break;
+        case 'safari':
+          steps = 'Safari → Preferences → Websites → Location → chọn Allow cho trang này. Sau đó reload.';
+          break;
+        case 'ios-safari':
+          steps = 'Cài đặt iOS → Safari → Vị trí → Cho phép. Hoặc vào Cài đặt → Quyền riêng tư → Dịch vụ định vị → bật cho Safari.';
+          break;
+        case 'ios-chrome':
+          steps = 'Cài đặt iOS → Chrome → Vị trí → Cho phép khi dùng ứng dụng. Sau đó mở lại trang.';
+          break;
+        default:
+          steps = 'Mở cài đặt quyền của trình duyệt và bật Quyền vị trí (Location) cho trang này, rồi tải lại.';
+      }
+      geoStepsEl.textContent = steps;
+      geoHelpEl.style.display = 'block';
+    }
+
+    function hideGeoHelp() { geoHelpEl.style.display = 'none'; }
+
+    async function retryGeolocationOnce() {
+      setStatus('⏳ Thử xin quyền vị trí lại...');
+      try {
+        const pos = await getPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 });
+        hideGeoHelp();
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lon = Number(pos.coords.longitude.toFixed(6));
+        setStatus('📍 Đã lấy được tọa độ sau khi cấp quyền.');
+        await saveLocationWith(lat, lon);
+      } catch (err) {
+        setStatus('❌ Vẫn chưa có quyền vị trí: ' + (err?.message || err), 'err');
+        showGeoHelp();
+      }
+    }
         navigator.geolocation.getCurrentPosition(resolve, reject, options);
       });
     }
@@ -131,41 +200,21 @@
         setStatus(msg, resp.ok ? "ok" : "err");
         setMap(lat, lon);
       } catch (err) {
-        const reason = err?.message || String(err);
-        const extra = reason.includes("Only secure origins") ? "\n→ Mẹo: chạy trên HTTPS hoặc localhost." : "";
-        setStatus("❌ Lỗi: " + reason + extra, "err");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-    }
-
-    async function saveLocation() {
-      // Nếu có toạ độ thủ công, ưu tiên dùng
-      const latMan = latManual.value.trim();
-      const lonMan = lonManual.value.trim();
-      if (latMan && lonMan) return saveLocationWith(Number(latMan), Number(lonMan));
-
-      setStatus("⏳ Đang lấy tọa độ...");
-      const enableHighAccuracy = accuracySel.value === "true";
-
-      try {
-        const pos = await getPosition({
-          enableHighAccuracy,
-          timeout: 10000,
-          maximumAge: enableHighAccuracy ? 1000 : 30000,
-        });
-
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lon = Number(pos.coords.longitude.toFixed(6));
-        setStatus("📍 Lấy tọa độ xong.");
-        await saveLocationWith(lat, lon);
-      } catch (err) {
-        setStatus("❌ Không lấy được tọa độ tự động: " + (err?.message || err));
+        const msg = err?.message || String(err);
+        setStatus('❌ Không lấy được tọa độ tự động: ' + msg, 'err');
+        if (err && (err.code === 1 || /denied|permission|blocked/i.test(msg))) {
+          showGeoHelp();
+        }
       }
     }
 
     btn.addEventListener("click", saveLocation);
+    retryBtn.addEventListener('click', retryGeolocationOnce);
+    openSiteBtn.addEventListener('click', showGeoHelp);
+    useManualBtn.addEventListener("click", () => {
+      if (!latManual.value || !lonManual.value) { alert("Nhập đủ vĩ độ & kinh độ"); return; }
+      saveLocationWith(Number(latManual.value), Number(lonManual.value));
+    });("click", saveLocation);
     useManualBtn.addEventListener("click", () => {
       if (!latManual.value || !lonManual.value) { alert("Nhập đủ vĩ độ & kinh độ"); return; }
       saveLocationWith(Number(latManual.value), Number(lonManual.value));
