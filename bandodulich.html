@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bản đồ du lịch của tôi — nền vệ tinh</title>
+  <title>Bản đồ du lịch + VietMap overlay</title>
 
   <!-- Leaflet & MarkerCluster -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -34,6 +34,7 @@
     .hidden{display:none}
     .toast{position:absolute;right:14px;bottom:14px;background:#102033;border-left:4px solid var(--ok);padding:12px 14px;border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35)}
     a, a:visited{color:#9bd4ff}
+    .label {background:rgba(11,18,32,.7); padding:2px 6px; border-radius:10px; border:1px solid #22304b; color:#e2e8f0; font-size:12px;}
   </style>
 </head>
 <body>
@@ -85,7 +86,7 @@
     </div>
 
     <div class="legend card">
-      Nền vệ tinh: Esri World Imagery • Dự phòng: OpenStreetMap • Cụm điểm: MarkerCluster
+      Nền: Esri vệ tinh / OSM • Overlay: Ranh tỉnh VietMap • Cụm điểm: MarkerCluster
     </div>
     <div id="toast" class="toast hidden"></div>
   </div>
@@ -95,17 +96,18 @@
     const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec';
     const TOKEN = 'abc123'; // nếu không dùng, để chuỗi rỗng
 
+    // URL dữ liệu ranh giới tỉnh VietMap (GeoJSON). Có thể đổi sang bản bạn tự host nếu muốn ổn định hơn.
+    const VIETMAP_PROVINCE_GEO =
+      'https://raw.githubusercontent.com/vietmap-company/vietnam_administrative_address/main/province.json';
+
     // ======= MAP INIT =======
     const map = L.map('map', { zoomControl: false }).setView([16.08, 108.22], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Nền bản đồ: Esri vệ tinh (mặc định) + OSM
+    // Nền bản đồ
     const esriSat = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        maxZoom: 19,
-        attribution: 'Tiles &copy; Esri — Source: Esri, Earthstar Geographics, GIS User Community'
-      }
+      { maxZoom: 19, attribution: 'Tiles &copy; Esri — Source: Esri, Earthstar Geographics, GIS User Community' }
     ).addTo(map);
 
     const osmStd = L.tileLayer(
@@ -113,11 +115,31 @@
       { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
     );
 
-    L.control.layers(
-      { 'Esri World Imagery (vệ tinh)': esriSat, 'OpenStreetMap Standard': osmStd },
-      {},
-      { position: 'topleft' }
-    ).addTo(map);
+    // Overlay VietMap: khởi tạo rỗng, sẽ addData() sau khi fetch
+    const vietmapProvinceLayer = L.geoJSON(null, {
+      style: feature => ({
+        color: '#34d399',   // viền xanh ngọc
+        weight: 1,
+        fillOpacity: 0      // không tô
+      }),
+      onEachFeature: (feature, layer) => {
+        const props = feature?.properties || {};
+        const name = props.name || props.NAME_1 || props.ten || 'Tỉnh/Thành';
+        layer.bindTooltip(`<span class="label">${name}</span>`, { sticky:true, direction:'center', opacity:0.9 });
+        layer.on('mouseover', () => layer.setStyle({ weight: 2, color:'#22c55e' }));
+        layer.on('mouseout', () => layer.setStyle({ weight: 1, color:'#34d399' }));
+      }
+    });
+
+    // Layer control
+    const baseLayers = {
+      'Esri World Imagery (vệ tinh)': esriSat,
+      'OpenStreetMap Standard': osmStd
+    };
+    const overlays = {
+      'Ranh giới tỉnh (VietMap)': vietmapProvinceLayer
+    };
+    L.control.layers(baseLayers, overlays, { position: 'topleft' }).addTo(map);
 
     // ======= Marker cluster =======
     const clusters = L.markerClusterGroup({
@@ -158,7 +180,28 @@
       document.getElementById('statCount').textContent = String(points.length);
     }
 
-    // ======= LOAD DATA =======
+    // ======= LOAD VietMap overlay =======
+    (async function loadVietMap(){
+      try{
+        const resp = await fetch(VIETMAP_PROVINCE_GEO, { cache:'no-store' });
+        const data = await resp.json();
+
+        // Kiểm tra cấu trúc GeoJSON
+        if (data && (data.type === 'FeatureCollection' || data.type === 'Feature')) {
+          vietmapProvinceLayer.addData(data);
+          // Thêm overlay lên map mặc định (nếu muốn bật sẵn)
+          vietmapProvinceLayer.addTo(map);
+        } else {
+          console.warn('File không phải GeoJSON chuẩn, payload:', data);
+          toast('Không thể đọc GeoJSON VietMap (cấu trúc khác chuẩn).', 'warn');
+        }
+      } catch(err){
+        console.error('Lỗi tải VietMap GeoJSON:', err);
+        toast('Lỗi tải VietMap overlay', 'err');
+      }
+    })();
+
+    // ======= LOAD DATA (điểm đã đi) =======
     async function loadPoints(){
       try{
         const url = new URL(SHEET_ENDPOINT);
