@@ -4,12 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bản đồ du lịch của tôi</title>
+
   <!-- Leaflet & MarkerCluster -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- Leaflet-providers: gọi nhanh nhiều tile miễn phí, không cần API key -->
+  <script src="https://unpkg.com/leaflet-providers@1.13.0/leaflet-providers.min.js"></script>
+
   <style>
     :root{
       --bg:#0b1220;--panel:#121a2a;--muted:#93a0b4;--accent:#4cc9f0;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;
@@ -82,14 +87,13 @@
       </div>
     </div>
 
-    <div class="legend card">Nguồn nền: © <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a> | Cụm điểm: MarkerCluster</div>
+    <div class="legend card">Nguồn nền: nhiều nhà cung cấp tile miễn phí | Cụm điểm: MarkerCluster</div>
     <div id="toast" class="toast hidden"></div>
   </div>
 
   <script>
     // ======= CONFIG =======
     // ĐIỀN URL web app Apps Script của bạn (đã Deploy type: Web app, access: Anyone)
-    // Gợi ý: dùng chung URL cho GET (action=list) và POST (ghi dữ liệu)
     const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec';
     const TOKEN = 'abc123'; // nếu không dùng token, để chuỗi rỗng
 
@@ -97,10 +101,19 @@
     const map = L.map('map', { zoomControl: false }).setView([16.08, 108.22], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    // Các nền miễn phí, không cần API key (Leaflet-providers)
+    const baseLayers = {
+      'CartoDB Positron (sáng)': L.tileLayer.provider('CartoDB.Positron'),
+      'CartoDB DarkMatter (tối)': L.tileLayer.provider('CartoDB.DarkMatter'),
+      'OpenStreetMap Standard':   L.tileLayer.provider('OpenStreetMap.Mapnik'),
+      'OpenStreetMap DE':         L.tileLayer.provider('OpenStreetMap.DE'),
+      'OpenTopoMap (địa hình)':   L.tileLayer.provider('OpenTopoMap'),
+      'Esri World Imagery (vệ tinh)': L.tileLayer.provider('Esri.WorldImagery')
+    };
+    // Chọn nền mặc định
+    baseLayers['CartoDB Positron (sáng)'].addTo(map);
+    // Nút chuyển nền
+    L.control.layers(baseLayers, {}, { position: 'topleft' }).addTo(map);
 
     // Cụm marker
     const clusters = L.markerClusterGroup({
@@ -137,7 +150,7 @@
     }
 
     function escapeHtml(str){
-      return String(str||'').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
+      return String(str||'').replace(/[&<>\"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
     }
 
     function markerFor(p){
