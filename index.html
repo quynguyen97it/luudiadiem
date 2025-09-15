@@ -3,15 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lưu tọa độ vào Google Sheets</title>
+  <title>Lưu tọa độ vào Google Sheets — bản tối ưu</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 24px auto; padding: 0 16px; }
+    :root { --fg:#111; --muted:#666; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; color: var(--fg); }
     h2 { margin: 0 0 12px; }
     .row { display: flex; gap: 8px; }
-    input { flex: 1; padding: 10px 12px; font-size: 16px; }
-    button { padding: 10px 14px; font-size: 16px; cursor: pointer; }
+    input, button, select { padding: 10px 12px; font-size: 16px; }
+    input { flex: 1; }
+    button { cursor: pointer; }
     #status { margin-top: 14px; white-space: pre-line; }
-    .muted { color: #666; font-size: 14px; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .ok { color: #0a7a0a; }
+    .err { color: #b00020; }
+    .map { margin-top: 12px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; height: 260px; display:none; }
+    .tip { background: #f7f7f7; padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
+    .row-2 { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
   </style>
 </head>
 <body>
@@ -20,20 +27,56 @@
     <input id="placeName" type="text" placeholder="Nhập tên địa điểm" />
     <button id="saveBtn">Lưu vào Google Sheets</button>
   </div>
-  <p class="muted">Lưu ý: Geolocation chỉ hoạt động trên trang <b>https://</b> hoặc localhost.</p>
+
+  <div class="row-2" style="margin-top:8px;">
+    <input id="note" type="text" placeholder="Ghi chú (tuỳ chọn)" />
+    <select id="accuracy">
+      <option value="true">Ưu tiên độ chính xác</option>
+      <option value="false" selected>Ưu tiên tốc độ</option>
+    </select>
+  </div>
+
+  <p class="muted">Lưu ý: Geolocation chỉ hoạt động trên trang <b>https://</b> hoặc localhost. Nếu bị chặn, bạn có thể gõ toạ độ thủ công ở hộp bên dưới.</p>
+
+  <details class="tip">
+    <summary>Nhập toạ độ thủ công (trong trường hợp GPS không hoạt động)</summary>
+    <div class="row" style="margin-top:8px;">
+      <input id="latManual" inputmode="decimal" placeholder="Vĩ độ (VD: 10.762622)" />
+      <input id="lonManual" inputmode="decimal" placeholder="Kinh độ (VD: 106.660172)" />
+      <button id="useManual">Dùng</button>
+    </div>
+  </details>
 
   <h3>Kết quả:</h3>
   <div id="status"></div>
+  <iframe id="map" class="map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
 
   <script>
     // 👉 DÁN URL Web App của Apps Script vào đây:
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec"; // ⚠️ BẮT BUỘC: dán URL triển khai Web App (phiên bản Execute as: Me; Access: Anyone)
+
+    // Tuỳ chọn: đặt một API token đơn giản để hạn chế spam (phải trùng với Apps Script)
+    const TOKEN = "abc123"; // ví dụ: "abc123" (để trống nếu không dùng)
 
     const btn = document.getElementById("saveBtn");
     const statusEl = document.getElementById("status");
+    const mapEl = document.getElementById("map");
 
-    function setStatus(text) { statusEl.textContent = text; }
+    const placeInput = document.getElementById("placeName");
+    const noteInput = document.getElementById("note");
+    const accuracySel = document.getElementById("accuracy");
+
+    const latManual = document.getElementById("latManual");
+    const lonManual = document.getElementById("lonManual");
+    const useManualBtn = document.getElementById("useManual");
+
+    function setStatus(html, cls = "") { statusEl.className = cls; statusEl.innerText = html; }
     function linkToMaps(lat, lon) { return `https://www.google.com/maps?q=${lat},${lon}`; }
+    function setMap(lat, lon) {
+      mapEl.style.display = "block";
+      // Static embed via Google Maps query (không cần API key)
+      mapEl.src = `https://maps.google.com/maps?q=${lat},${lon}&z=15&output=embed`;
+    }
 
     function getPosition(options = {}) {
       return new Promise((resolve, reject) => {
@@ -45,71 +88,88 @@
       });
     }
 
-    async function saveLocation() {
-      const name = document.getElementById("placeName").value.trim();
+    async function saveLocationWith(lat, lon) {
+      const name = placeInput.value.trim();
       if (!name) { alert("Hãy nhập tên địa điểm!"); return; }
 
-      // Khóa nút + báo trạng thái
       btn.disabled = true;
       const originalText = btn.textContent;
       btn.textContent = "Đang lưu...";
-      setStatus("⏳ Đang lấy tọa độ...");
 
       try {
-        // Timeout 10s + ưu tiên độ chính xác
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-
-        const pos = await getPosition({
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 30000
-        });
-        clearTimeout(timer);
-
-        const lat = pos.coords.latitude.toFixed(6);
-        const lon = pos.coords.longitude.toFixed(6);
         const time = new Date().toISOString();
         const ua = navigator.userAgent;
+        const note = noteInput.value.trim();
 
-        setStatus("📍 Lấy tọa độ xong. Đang gửi lên Google Sheets...");
+        setStatus("📤 Đang gửi lên Google Sheets...");
 
-        // Dùng form-encoded để tránh preflight CORS
-        const form = new URLSearchParams({ name, lat, lon, time, ua });
+        const form = new URLSearchParams({ name, lat, lon, time, ua, note });
+        if (TOKEN) form.append("token", TOKEN);
 
         const resp = await fetch(SCRIPT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: form.toString()
+          body: form.toString(),
         });
 
-        // Thử đọc JSON phản hồi (đã cấu hình ở Apps Script)
+        // Cố gắng parse JSON; fallback sang text
+        const text = await resp.text();
         let msg = "";
         try {
-          const data = await resp.json();
+          const data = JSON.parse(text);
           if (data && data.ok) {
-            msg = `✅ Đã lưu: ${name}\nTọa độ: ${lat}, ${lon}\nDòng: ${data.row}`;
+            msg = `✅ Đã lưu: ${name}\nTọa độ: ${lat}, ${lon}\nDòng: ${data.row ?? "?"}`;
           } else {
-            msg = `⚠️ Đã gửi nhưng phản hồi không như mong đợi.`;
+            msg = `⚠️ Đã gửi nhưng phản hồi không như mong đợi.\nServer: ${text.slice(0, 200)}`;
           }
         } catch {
-          // Nếu không parse được JSON vẫn coi như thành công tối thiểu
-          msg = `✅ Đã lưu (không đọc được phản hồi JSON).`;
+          if (resp.ok) msg = `✅ Đã lưu (server trả text).\nServer: ${text.slice(0, 200)}`;
+          else msg = `❌ Lỗi HTTP ${resp.status}.\nServer: ${text.slice(0, 200)}`;
         }
 
         msg += `\n🔗 Xem trên Maps: ${linkToMaps(lat, lon)}`;
-        setStatus(msg);
+        setStatus(msg, resp.ok ? "ok" : "err");
+        setMap(lat, lon);
       } catch (err) {
         const reason = err?.message || String(err);
-        setStatus("❌ Lỗi: " + reason + (reason.includes("Only secure origins") ? "\n→ Mẹo: chạy trên HTTPS hoặc localhost." : ""));
+        const extra = reason.includes("Only secure origins") ? "\n→ Mẹo: chạy trên HTTPS hoặc localhost." : "";
+        setStatus("❌ Lỗi: " + reason + extra, "err");
       } finally {
         btn.disabled = false;
         btn.textContent = originalText;
       }
     }
 
+    async function saveLocation() {
+      // Nếu có toạ độ thủ công, ưu tiên dùng
+      const latMan = latManual.value.trim();
+      const lonMan = lonManual.value.trim();
+      if (latMan && lonMan) return saveLocationWith(Number(latMan), Number(lonMan));
+
+      setStatus("⏳ Đang lấy tọa độ...");
+      const enableHighAccuracy = accuracySel.value === "true";
+
+      try {
+        const pos = await getPosition({
+          enableHighAccuracy,
+          timeout: 10000,
+          maximumAge: enableHighAccuracy ? 1000 : 30000,
+        });
+
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lon = Number(pos.coords.longitude.toFixed(6));
+        setStatus("📍 Lấy tọa độ xong.");
+        await saveLocationWith(lat, lon);
+      } catch (err) {
+        setStatus("❌ Không lấy được tọa độ tự động: " + (err?.message || err));
+      }
+    }
+
     btn.addEventListener("click", saveLocation);
+    useManualBtn.addEventListener("click", () => {
+      if (!latManual.value || !lonManual.value) { alert("Nhập đủ vĩ độ & kinh độ"); return; }
+      saveLocationWith(Number(latManual.value), Number(lonManual.value));
+    });
   </script>
 </body>
 </html>
-
