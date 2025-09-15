@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bản đồ du lịch của tôi</title>
+  <!-- Leaflet & MarkerCluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <style>
+    :root{
+      --bg:#0b1220;--panel:#121a2a;--muted:#93a0b4;--accent:#4cc9f0;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;
+    }
+    html,body,#app{height:100%;margin:0;background:var(--bg);color:white;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    #map{height:100%;width:100%}
+    .topbar{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:center;z-index:5000}
+    .card{background:var(--panel);border:1px solid #22304b;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.35);padding:10px}
+    .control{display:flex;gap:8px;align-items:center}
+    .control input,.control select{background:#0f1626;border:1px solid #26334f;color:white;border-radius:12px;padding:10px 12px}
+    .btn{cursor:pointer;border:none;background:#1e293b;color:#e2e8f0;border-radius:12px;padding:10px 12px;font-weight:600}
+    .btn:hover{filter:brightness(1.12)}
+    .btn.primary{background:var(--accent);color:#031523}
+    .badge{font-size:12px;color:var(--muted)}
+    .legend{position:absolute;bottom:14px;left:14px;z-index:5000}
+    .panel{position:absolute;top:74px;left:12px;z-index:5000;min-width:320px;max-width:92vw}
+    .panel h3{margin:0 0 8px}
+    .row{display:flex;gap:8px}
+    .row>*{flex:1}
+    .hidden{display:none}
+    .toast{position:absolute;right:14px;bottom:14px;background:#102033;border-left:4px solid var(--ok);padding:12px 14px;border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.35)}
+    a, a:visited{color:#9bd4ff}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="map"></div>
+
+    <!-- Top controls -->
+    <div class="topbar">
+      <div class="card control" style="flex:1;min-width:260px">
+        <input id="q" placeholder="Tìm theo tên/ghi chú… (ví dụ: Đà Nẵng, 2025)" style="flex:1"/>
+        <input id="from" type="date" title="Từ ngày"/>
+        <input id="to" type="date" title="Đến ngày"/>
+        <button class="btn" id="btnFilter">Lọc</button>
+        <button class="btn" id="btnClear">Xoá lọc</button>
+      </div>
+      <div class="card control">
+        <button class="btn" id="btnLocate">Vị trí của tôi</button>
+        <button class="btn primary" id="btnAdd">Thêm địa điểm</button>
+        <button class="btn" id="btnExport">Xuất GeoJSON</button>
+      </div>
+    </div>
+
+    <!-- Side panel / form -->
+    <div class="panel">
+      <div id="formCard" class="card hidden">
+        <h3>Thêm địa điểm đã đi</h3>
+        <div class="row">
+          <input id="f_name" placeholder="Tên địa điểm (ví dụ: Cầu Rồng)"/>
+          <input id="f_date" type="datetime-local"/>
+        </div>
+        <div class="row">
+          <input id="f_lat" placeholder="Vĩ độ (lat)"/>
+          <input id="f_lon" placeholder="Kinh độ (lon)"/>
+        </div>
+        <textarea id="f_note" rows="3" style="width:100%;background:#0f1626;border:1px solid #26334f;color:white;border-radius:12px;padding:10px" placeholder="Ghi chú"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" id="f_cancel">Huỷ</button>
+          <button class="btn primary" id="f_save">Lưu</button>
+        </div>
+        <div class="badge">Mẹo: Nhấn vào bản đồ để tự điền lat/lon.</div>
+      </div>
+
+      <div id="statsCard" class="card">
+        <div class="row" style="align-items:center">
+          <div style="font-weight:700">Tổng địa điểm: <span id="statCount">0</span></div>
+          <div class="badge">Lần cập nhật gần nhất: <span id="statUpdated">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend card">Nguồn nền: © <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a> | Cụm điểm: MarkerCluster</div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script>
+    // ======= CONFIG =======
+    // ĐIỀN URL web app Apps Script của bạn (đã Deploy type: Web app, access: Anyone)
+    // Gợi ý: dùng chung URL cho GET (action=list) và POST (ghi dữ liệu)
+    const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwhvyb2wHU1cTEaUGhp73x7uvjx7I42h9JN2XrOAUqtBadlpgKWRMDri8CgkObHF_Th/exec';
+    const TOKEN = 'abc123'; // nếu không dùng token, để chuỗi rỗng
+
+    // ======= MAP INIT =======
+    const map = L.map('map', { zoomControl: false }).setView([16.08, 108.22], 5);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Cụm marker
+    const clusters = L.markerClusterGroup({
+      showCoverageOnHover:false,
+      spiderfyOnEveryZoom:false,
+      chunkedLoading:true
+    }).addTo(map);
+
+    // Lớp tất cả điểm (để lọc)
+    let ALL_POINTS = [];
+    const markersIndex = new Map(); // id -> marker
+
+    // ======= HELPERS =======
+    const tz = 'Asia/Ho_Chi_Minh';
+    const fmtDateTime = (d) => new Intl.DateTimeFormat('vi-VN', {dateStyle:'medium', timeStyle:'short', timeZone: tz}).format(d);
+
+    function toast(msg, type='ok'){
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.style.borderLeftColor = type==='err'? '#ef4444' : (type==='warn'? '#f59e0b' : '#22c55e');
+      el.classList.remove('hidden');
+      setTimeout(()=>el.classList.add('hidden'), 3000);
+    }
+
+    function buildPopup(p){
+      const when = p.time ? fmtDateTime(new Date(p.time)) : '—';
+      const note = p.note ? `<div style="margin-top:6px;color:#cbd5e1">${escapeHtml(p.note)}</div>` : '';
+      return `<div style="min-width:220px">
+        <div style="font-weight:700;font-size:16px">${escapeHtml(p.name||'Địa điểm')}</div>
+        <div class="badge">${when}</div>
+        ${note}
+        <div class="badge" style="margin-top:6px">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</div>
+      </div>`;
+    }
+
+    function escapeHtml(str){
+      return String(str||'').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
+    }
+
+    function markerFor(p){
+      const m = L.marker([p.lat, p.lon]);
+      m.bindPopup(buildPopup(p));
+      m.feature = { type:'Feature', properties:p, geometry:{ type:'Point', coordinates:[p.lon, p.lat] } };
+      return m;
+    }
+
+    function refreshLayers(points){
+      clusters.clearLayers();
+      markersIndex.clear();
+      points.forEach((p,i)=>{
+        const m = markerFor(p);
+        clusters.addLayer(m);
+        markersIndex.set((p.id||`row-${i}`), m);
+      })
+      document.getElementById('statCount').textContent = String(points.length);
+    }
+
+    // ======= LOAD DATA =======
+    async function loadPoints(){
+      try{
+        const url = new URL(SHEET_ENDPOINT);
+        url.searchParams.set('action','list');
+        if (TOKEN) url.searchParams.set('token', TOKEN);
+        const res = await fetch(url.toString());
+        const data = await res.json();
+        if(!data.ok) throw new Error(data.error||'Tải dữ liệu thất bại');
+        const arr = (data.points||[]).map(normPoint);
+        ALL_POINTS = arr;
+        document.getElementById('statUpdated').textContent = fmtDateTime(new Date());
+        refreshLayers(ALL_POINTS);
+        fitToData();
+      }catch(err){
+        console.warn(err);
+        // Fallback demo
+        ALL_POINTS = demoPoints().map(normPoint);
+        refreshLayers(ALL_POINTS);
+        fitToData();
+        toast('Đang dùng dữ liệu mẫu vì chưa cấu hình endpoint', 'warn');
+      }
+    }
+
+    function normPoint(p){
+      const lat = Number(p.lat), lon = Number(p.lon);
+      const time = p.time ? new Date(p.time) : null;
+      return { id:p.id||undefined, name:p.name||'', lat, lon, time: time? time.toISOString(): '', note:p.note||'' };
+    }
+
+    function fitToData(){
+      if(!ALL_POINTS.length) return;
+      const b = L.latLngBounds(ALL_POINTS.map(p=>[p.lat,p.lon]));
+      map.fitBounds(b.pad(0.15));
+    }
+
+    function demoPoints(){
+      return [
+        { name:'Hà Nội', lat:21.0278, lon:105.8342, time:'2024-12-29T10:00:00+07:00', note:'Hồ Gươm' },
+        { name:'Đà Nẵng', lat:16.0544, lon:108.2022, time:'2025-02-02T09:30:00+07:00', note:'Cầu Rồng' },
+        { name:'Côn Đảo', lat:8.695, lon:106.606, time:'2025-05-01T08:00:00+07:00', note:'Bãi Đầm Trầu' }
+      ];
+    }
+
+    // ======= FILTERING & SEARCH =======
+    function applyFilter(){
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      const from = document.getElementById('from').value ? new Date(document.getElementById('from').value) : null;
+      const to = document.getElementById('to').value ? new Date(document.getElementById('to').value + 'T23:59:59') : null;
+      const filtered = ALL_POINTS.filter(p=>{
+        const hay = (p.name+' '+(p.note||'')+' '+(p.time||'')).toLowerCase();
+        const textOk = !q || hay.includes(q);
+        const t = p.time? new Date(p.time) : null;
+        const fromOk = !from || (t && t >= from);
+        const toOk = !to || (t && t <= to);
+        return textOk && fromOk && toOk;
+      });
+      refreshLayers(filtered);
+      if(filtered.length) {
+        const b = L.latLngBounds(filtered.map(p=>[p.lat,p.lon]));
+        map.fitBounds(b.pad(0.15));
+      }
+    }
+
+    document.getElementById('btnFilter').onclick = applyFilter;
+    document.getElementById('btnClear').onclick = ()=>{
+      document.getElementById('q').value='';
+      document.getElementById('from').value='';
+      document.getElementById('to').value='';
+      refreshLayers(ALL_POINTS); fitToData();
+    };
+
+    // ======= GEOLOCATION =======
+    document.getElementById('btnLocate').onclick = ()=>{
+      if(!navigator.geolocation) return toast('Trình duyệt không hỗ trợ GPS', 'err');
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const { latitude, longitude } = pos.coords;
+        map.flyTo([latitude, longitude], 14);
+        L.circle([latitude, longitude], { radius: 60 }).addTo(map);
+      }, err=> toast('Không lấy được vị trí: '+err.message, 'err'))
+    };
+
+    // ======= ADD NEW PLACE =======
+    const form = {
+      card: document.getElementById('formCard'),
+      name: document.getElementById('f_name'),
+      date: document.getElementById('f_date'),
+      lat: document.getElementById('f_lat'),
+      lon: document.getElementById('f_lon'),
+      note: document.getElementById('f_note'),
+      cancel: document.getElementById('f_cancel'),
+      save: document.getElementById('f_save'),
+    };
+
+    let adding = false;
+    document.getElementById('btnAdd').onclick = ()=>{
+      adding = !adding;
+      if(adding){
+        toast('Nhấn lên bản đồ để chọn vị trí');
+        form.card.classList.remove('hidden');
+        form.date.value = new Date().toISOString().slice(0,16);
+      }else{
+        form.card.classList.add('hidden');
+      }
+    };
+
+    map.on('click', (e)=>{
+      if(!adding) return;
+      form.lat.value = e.latlng.lat.toFixed(6);
+      form.lon.value = e.latlng.lng.toFixed(6);
+    });
+
+    form.cancel.onclick = ()=>{ form.card.classList.add('hidden'); adding=false };
+
+    form.save.onclick = async ()=>{
+      try{
+        const payload = {
+          name: form.name.value.trim(),
+          lat: form.lat.value.trim(),
+          lon: form.lon.value.trim(),
+          time: new Date(form.date.value).toISOString(),
+          note: form.note.value.trim(),
+          ua: navigator.userAgent,
+          token: TOKEN
+        };
+        if(!payload.name || !payload.lat || !payload.lon){
+          toast('Vui lòng nhập tên và toạ độ', 'warn'); return;
+        }
+        const res = await fetch(SHEET_ENDPOINT, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(payload)});
+        const data = await res.json();
+        if(!data.ok) throw new Error(data.error||'Không lưu được');
+        toast('Đã lưu!');
+        form.card.classList.add('hidden'); adding=false;
+        await loadPoints();
+      }catch(err){
+        console.error(err);
+        toast('Lỗi khi lưu: '+err.message, 'err');
+      }
+    };
+
+    // ======= EXPORT =======
+    document.getElementById('btnExport').onclick = ()=>{
+      const feats = (ALL_POINTS||[]).map(p=>({ type:'Feature', properties:{ name:p.name, time:p.time, note:p.note }, geometry:{ type:'Point', coordinates:[p.lon,p.lat] }}));
+      const blob = new Blob([JSON.stringify({ type:'FeatureCollection', features:feats }, null, 2)], {type:'application/geo+json'});
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'visited.geojson' });
+      a.click();
+    };
+
+    // ======= START =======
+    loadPoints();
+  </script>
+</body>
+</html>
