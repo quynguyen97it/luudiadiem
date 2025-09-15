@@ -1,59 +1,114 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Lưu tọa độ vào Google Sheets</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 24px auto; padding: 0 16px; }
+    h2 { margin: 0 0 12px; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 10px 12px; font-size: 16px; }
+    button { padding: 10px 14px; font-size: 16px; cursor: pointer; }
+    #status { margin-top: 14px; white-space: pre-line; }
+    .muted { color: #666; font-size: 14px; }
+  </style>
 </head>
 <body>
   <h2>Lưu tọa độ bạn đã ghé</h2>
-  <input id="placeName" type="text" placeholder="Nhập tên địa điểm">
-  <button onclick="saveLocation()">Lưu vào Google Sheets</button>
+  <div class="row">
+    <input id="placeName" type="text" placeholder="Nhập tên địa điểm" />
+    <button id="saveBtn">Lưu vào Google Sheets</button>
+  </div>
+  <p class="muted">Lưu ý: Geolocation chỉ hoạt động trên trang <b>https://</b> hoặc localhost.</p>
 
   <h3>Kết quả:</h3>
   <div id="status"></div>
 
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec";
+    // 👉 DÁN URL Web App của Apps Script vào đây:
+    const SCRIPT_URL = "PASTE_YOUR_WEB_APP_URL_HERE";
 
-    function saveLocation() {
-      const name = document.getElementById("placeName").value;
-      if (!name) {
-        alert("Hãy nhập tên địa điểm!");
-        return;
-      }
+    const btn = document.getElementById("saveBtn");
+    const statusEl = document.getElementById("status");
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          const time = new Date().toISOString();
+    function setStatus(text) { statusEl.textContent = text; }
+    function linkToMaps(lat, lon) { return `https://www.google.com/maps?q=${lat},${lon}`; }
 
-          const data = { name, lat, lon, time };
+    function getPosition(options = {}) {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error("Trình duyệt không hỗ trợ GPS."));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+    }
 
-          fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify(data),
-            headers: { "Content-Type": "application/json" }
-          })
-          .then(res => res.text())
-          .then(txt => {
-            document.getElementById("status").innerText = "✅ Đã lưu: " + name;
-          })
-          .catch(err => {
-            document.getElementById("status").innerText = "❌ Lỗi: " + err;
-          });
+    async function saveLocation() {
+      const name = document.getElementById("placeName").value.trim();
+      if (!name) { alert("Hãy nhập tên địa điểm!"); return; }
 
-        }, err => {
-          alert("Không lấy được tọa độ: " + err.message);
+      // Khóa nút + báo trạng thái
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = "Đang lưu...";
+      setStatus("⏳ Đang lấy tọa độ...");
+
+      try {
+        // Timeout 10s + ưu tiên độ chính xác
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+
+        const pos = await getPosition({
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 30000
         });
-      } else {
-        alert("Trình duyệt không hỗ trợ GPS!");
+        clearTimeout(timer);
+
+        const lat = pos.coords.latitude.toFixed(6);
+        const lon = pos.coords.longitude.toFixed(6);
+        const time = new Date().toISOString();
+        const ua = navigator.userAgent;
+
+        setStatus("📍 Lấy tọa độ xong. Đang gửi lên Google Sheets...");
+
+        // Dùng form-encoded để tránh preflight CORS
+        const form = new URLSearchParams({ name, lat, lon, time, ua });
+
+        const resp = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: form.toString()
+        });
+
+        // Thử đọc JSON phản hồi (đã cấu hình ở Apps Script)
+        let msg = "";
+        try {
+          const data = await resp.json();
+          if (data && data.ok) {
+            msg = `✅ Đã lưu: ${name}\nTọa độ: ${lat}, ${lon}\nDòng: ${data.row}`;
+          } else {
+            msg = `⚠️ Đã gửi nhưng phản hồi không như mong đợi.`;
+          }
+        } catch {
+          // Nếu không parse được JSON vẫn coi như thành công tối thiểu
+          msg = `✅ Đã lưu (không đọc được phản hồi JSON).`;
+        }
+
+        msg += `\n🔗 Xem trên Maps: ${linkToMaps(lat, lon)}`;
+        setStatus(msg);
+      } catch (err) {
+        const reason = err?.message || String(err);
+        setStatus("❌ Lỗi: " + reason + (reason.includes("Only secure origins") ? "\n→ Mẹo: chạy trên HTTPS hoặc localhost." : ""));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     }
+
+    btn.addEventListener("click", saveLocation);
   </script>
 </body>
 </html>
-
-
-
-
