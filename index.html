@@ -60,166 +60,222 @@
   <iframe id="map" class="map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
 
   <script>
-    // 👉 DÁN URL Web App của Apps Script vào đây:
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec"; // ⚠️ BẮT BUỘC: dán URL triển khai Web App (phiên bản Execute as: Me; Access: Anyone)
+  // 👉 DÁN URL Web App của Apps Script vào đây:
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec"; // URL web app
+  const TOKEN = "abc123"; // tuỳ chọn, để '' nếu không dùng
 
-    // Tuỳ chọn: đặt một API token đơn giản để hạn chế spam (phải trùng với Apps Script)
-    const TOKEN = "abc123"; // ví dụ: "abc123" (để trống nếu không dùng)
+  const btn = document.getElementById("saveBtn");
+  const statusEl = document.getElementById("status");
+  const mapEl = document.getElementById("map");
 
-    const btn = document.getElementById("saveBtn");
-    const statusEl = document.getElementById("status");
-    const mapEl = document.getElementById("map");
-    const geoHelpEl = document.getElementById("geoHelp");
-    const geoStepsEl = document.getElementById("geoSteps");
-    const retryBtn = document.getElementById("retryGPS");
-    const openSiteBtn = document.getElementById("openSiteSettings");
+  const geoHelpEl = document.getElementById("geoHelp");
+  const geoStepsEl = document.getElementById("geoSteps");
+  const retryBtn = document.getElementById("retryGPS");
+  const openSiteBtn = document.getElementById("openSiteSettings");
 
-    const placeInput = document.getElementById("placeName");
-    const noteInput = document.getElementById("note");
-    const accuracySel = document.getElementById("accuracy");
+  const placeInput = document.getElementById("placeName");
+  const noteInput = document.getElementById("note");
+  const accuracySel = document.getElementById("accuracy");
 
-    const latManual = document.getElementById("latManual");
-    const lonManual = document.getElementById("lonManual");
-    const useManualBtn = document.getElementById("useManual");
+  const latManual = document.getElementById("latManual");
+  const lonManual = document.getElementById("lonManual");
+  const useManualBtn = document.getElementById("useManual");
 
-    function setStatus(html, cls = "") { statusEl.className = cls; statusEl.innerText = html; }
-    function linkToMaps(lat, lon) { return `https://www.google.com/maps?q=${lat},${lon}`; }
-    function setMap(lat, lon) {
-      mapEl.style.display = "block";
-      // Static embed via Google Maps query (không cần API key)
-      mapEl.src = `https://maps.google.com/maps?q=${lat},${lon}&z=15&output=embed`;
-    }
+  function setStatus(text, cls = "") {
+    statusEl.className = cls;
+    statusEl.innerText = text;
+  }
+  function linkToMaps(lat, lon) {
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  }
+  function setMap(lat, lon) {
+    mapEl.style.display = "block";
+    mapEl.src = `https://maps.google.com/maps?q=${lat},${lon}&z=15&output=embed`;
+  }
 
-    function getPosition(options = {}) {
-      return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error("Trình duyệt không hỗ trợ GPS."));
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(resolve, reject, options);
-      });
-    }
-
-    function detectBrowser() {
-      const ua = navigator.userAgent.toLowerCase();
-      const isIOS = /iphone|ipad|ipod/.test(ua);
-      if (ua.includes('edg/')) return 'edge';
-      if (ua.includes('chrome') && !ua.includes('edg/') && !ua.includes('opr/')) return isIOS ? 'ios-chrome' : 'chrome';
-      if (ua.includes('safari') && !ua.includes('chrome')) return isIOS ? 'ios-safari' : 'safari';
-      if (ua.includes('firefox')) return 'firefox';
-      return 'other';
-    }
-
-    function showGeoHelp() {
-      const b = detectBrowser();
-      let steps = '';
-      switch (b) {
-        case 'chrome':
-        case 'edge':
-          steps = 'Nhấn vào biểu tượng ổ khoá trên thanh địa chỉ → Quyền → Vị trí → Cho phép. Sau đó tải lại trang.';
-          break;
-        case 'firefox':
-          steps = 'Nhấn vào biểu tượng khiên/ổ khoá → Quyền → Vị trí → Cho phép cho trang này. Rồi tải lại trang.';
-          break;
-        case 'safari':
-          steps = 'Safari → Preferences → Websites → Location → chọn Allow cho trang này. Sau đó reload.';
-          break;
-        case 'ios-safari':
-          steps = 'Cài đặt iOS → Safari → Vị trí → Cho phép. Hoặc vào Cài đặt → Quyền riêng tư → Dịch vụ định vị → bật cho Safari.';
-          break;
-        case 'ios-chrome':
-          steps = 'Cài đặt iOS → Chrome → Vị trí → Cho phép khi dùng ứng dụng. Sau đó mở lại trang.';
-          break;
-        default:
-          steps = 'Mở cài đặt quyền của trình duyệt và bật Quyền vị trí (Location) cho trang này, rồi tải lại.';
+  function getPosition(options = {}) {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Trình duyệt không hỗ trợ GPS."));
+        return;
       }
-      geoStepsEl.textContent = steps;
-      geoHelpEl.style.display = 'block';
+      navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    });
+  }
+
+  function detectBrowser() {
+    const ua = navigator.userAgent.toLowerCase();
+    const isIOS = /iphone|ipad|ipod/.test(ua);
+    if (ua.includes("edg/")) return "edge";
+    if (ua.includes("chrome") && !ua.includes("edg/") && !ua.includes("opr/"))
+      return isIOS ? "ios-chrome" : "chrome";
+    if (ua.includes("safari") && !ua.includes("chrome"))
+      return isIOS ? "ios-safari" : "safari";
+    if (ua.includes("firefox")) return "firefox";
+    return "other";
+  }
+
+  function showGeoHelp() {
+    const b = detectBrowser();
+    let steps = "";
+    switch (b) {
+      case "chrome":
+      case "edge":
+        steps =
+          "Nhấn vào biểu tượng ổ khoá trên thanh địa chỉ → Quyền → Vị trí → Cho phép. Sau đó tải lại trang.";
+        break;
+      case "firefox":
+        steps =
+          "Nhấn vào biểu tượng khiên/ổ khoá → Quyền → Vị trí → Cho phép cho trang này. Rồi tải lại trang.";
+        break;
+      case "safari":
+        steps =
+          "Safari → Preferences → Websites → Location → chọn Allow cho trang này. Sau đó reload.";
+        break;
+      case "ios-safari":
+        steps =
+          "Cài đặt iOS → Safari → Vị trí → Cho phép. Hoặc vào Cài đặt → Quyền riêng tư → Dịch vụ định vị → bật cho Safari.";
+        break;
+      case "ios-chrome":
+        steps =
+          "Cài đặt iOS → Chrome → Vị trí → Cho phép khi dùng ứng dụng. Sau đó mở lại trang.";
+        break;
+      default:
+        steps =
+          "Mở cài đặt quyền của trình duyệt và bật Quyền vị trí (Location) cho trang này, rồi tải lại.";
+    }
+    geoStepsEl.textContent = steps;
+    geoHelpEl.style.display = "block";
+  }
+
+  function hideGeoHelp() {
+    geoHelpEl.style.display = "none";
+  }
+
+  async function saveLocationWith(lat, lon) {
+    const name = placeInput.value.trim();
+    if (!name) {
+      alert("Hãy nhập tên địa điểm!");
+      return;
     }
 
-    function hideGeoHelp() { geoHelpEl.style.display = 'none'; }
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Đang lưu...";
 
-    async function retryGeolocationOnce() {
-      setStatus('⏳ Thử xin quyền vị trí lại...');
+    try {
+      const time = new Date().toISOString();
+      const ua = navigator.userAgent;
+      const note = noteInput.value.trim();
+
+      setStatus("📤 Đang gửi lên Google Sheets...");
+
+      const form = new URLSearchParams({ name, lat, lon, time, ua, note });
+      if (TOKEN) form.append("token", TOKEN);
+
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body: form.toString(),
+      });
+
+      const text = await resp.text();
+      let msg = "";
       try {
-        const pos = await getPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 });
-        hideGeoHelp();
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lon = Number(pos.coords.longitude.toFixed(6));
-        setStatus('📍 Đã lấy được tọa độ sau khi cấp quyền.');
-        await saveLocationWith(lat, lon);
-      } catch (err) {
-        setStatus('❌ Vẫn chưa có quyền vị trí: ' + (err?.message || err), 'err');
+        const data = JSON.parse(text);
+        if (data && data.ok) {
+          msg = `✅ Đã lưu: ${name}\nTọa độ: ${lat}, ${lon}\nDòng: ${
+            data.row ?? "?"
+          }`;
+        } else {
+          msg = `⚠️ Đã gửi nhưng phản hồi không như mong đợi.\nServer: ${text.slice(
+            0,
+            200
+          )}`;
+        }
+      } catch {
+        if (resp.ok)
+          msg = `✅ Đã lưu (server trả text).\nServer: ${text.slice(0, 200)}`;
+        else msg = `❌ Lỗi HTTP ${resp.status}.\nServer: ${text.slice(0, 200)}`;
+      }
+
+      msg += `\n🔗 Xem trên Maps: ${linkToMaps(lat, lon)}`;
+      setStatus(msg, resp.ok ? "ok" : "err");
+      setMap(lat, lon);
+    } catch (err) {
+      setStatus("❌ Lỗi: " + (err?.message || String(err)), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  async function saveLocation() {
+    const latMan = latManual.value.trim();
+    const lonMan = lonManual.value.trim();
+    if (latMan && lonMan)
+      return saveLocationWith(Number(latMan), Number(lonMan));
+
+    setStatus("⏳ Đang lấy tọa độ...");
+    const enableHighAccuracy = accuracySel.value === "true";
+
+    try {
+      const pos = await getPosition({
+        enableHighAccuracy,
+        timeout: 10000,
+        maximumAge: enableHighAccuracy ? 1000 : 30000,
+      });
+
+      const lat = Number(pos.coords.latitude.toFixed(6));
+      const lon = Number(pos.coords.longitude.toFixed(6));
+      setStatus("📍 Lấy tọa độ xong.");
+      await saveLocationWith(lat, lon);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      setStatus("❌ Không lấy được tọa độ tự động: " + msg, "err");
+      if (err && (err.code === 1 || /denied|permission|blocked/i.test(msg))) {
         showGeoHelp();
       }
     }
-        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  }
+
+  async function retryGeolocationOnce() {
+    setStatus("⏳ Thử xin quyền vị trí lại...");
+    try {
+      const pos = await getPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 1000,
       });
+      hideGeoHelp();
+      const lat = Number(pos.coords.latitude.toFixed(6));
+      const lon = Number(pos.coords.longitude.toFixed(6));
+      setStatus("📍 Đã lấy được tọa độ sau khi cấp quyền.");
+      await saveLocationWith(lat, lon);
+    } catch (err) {
+      setStatus(
+        "❌ Vẫn chưa có quyền vị trí: " + (err?.message || err),
+        "err"
+      );
+      showGeoHelp();
     }
+  }
 
-    async function saveLocationWith(lat, lon) {
-      const name = placeInput.value.trim();
-      if (!name) { alert("Hãy nhập tên địa điểm!"); return; }
-
-      btn.disabled = true;
-      const originalText = btn.textContent;
-      btn.textContent = "Đang lưu...";
-
-      try {
-        const time = new Date().toISOString();
-        const ua = navigator.userAgent;
-        const note = noteInput.value.trim();
-
-        setStatus("📤 Đang gửi lên Google Sheets...");
-
-        const form = new URLSearchParams({ name, lat, lon, time, ua, note });
-        if (TOKEN) form.append("token", TOKEN);
-
-        const resp = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: form.toString(),
-        });
-
-        // Cố gắng parse JSON; fallback sang text
-        const text = await resp.text();
-        let msg = "";
-        try {
-          const data = JSON.parse(text);
-          if (data && data.ok) {
-            msg = `✅ Đã lưu: ${name}\nTọa độ: ${lat}, ${lon}\nDòng: ${data.row ?? "?"}`;
-          } else {
-            msg = `⚠️ Đã gửi nhưng phản hồi không như mong đợi.\nServer: ${text.slice(0, 200)}`;
-          }
-        } catch {
-          if (resp.ok) msg = `✅ Đã lưu (server trả text).\nServer: ${text.slice(0, 200)}`;
-          else msg = `❌ Lỗi HTTP ${resp.status}.\nServer: ${text.slice(0, 200)}`;
-        }
-
-        msg += `\n🔗 Xem trên Maps: ${linkToMaps(lat, lon)}`;
-        setStatus(msg, resp.ok ? "ok" : "err");
-        setMap(lat, lon);
-      } catch (err) {
-        const msg = err?.message || String(err);
-        setStatus('❌ Không lấy được tọa độ tự động: ' + msg, 'err');
-        if (err && (err.code === 1 || /denied|permission|blocked/i.test(msg))) {
-          showGeoHelp();
-        }
-      }
+  btn.addEventListener("click", saveLocation);
+  retryBtn.addEventListener("click", retryGeolocationOnce);
+  openSiteBtn.addEventListener("click", showGeoHelp);
+  useManualBtn.addEventListener("click", () => {
+    if (!latManual.value || !lonManual.value) {
+      alert("Nhập đủ vĩ độ & kinh độ");
+      return;
     }
+    saveLocationWith(Number(latManual.value), Number(lonManual.value));
+  });
+</script>
 
-    btn.addEventListener("click", saveLocation);
-    retryBtn.addEventListener('click', retryGeolocationOnce);
-    openSiteBtn.addEventListener('click', showGeoHelp);
-    useManualBtn.addEventListener("click", () => {
-      if (!latManual.value || !lonManual.value) { alert("Nhập đủ vĩ độ & kinh độ"); return; }
-      saveLocationWith(Number(latManual.value), Number(lonManual.value));
-    });("click", saveLocation);
-    useManualBtn.addEventListener("click", () => {
-      if (!latManual.value || !lonManual.value) { alert("Nhập đủ vĩ độ & kinh độ"); return; }
-      saveLocationWith(Number(latManual.value), Number(lonManual.value));
-    });
-  </script>
 </body>
 </html>
+
 
