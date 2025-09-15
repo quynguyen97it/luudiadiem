@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bản đồ du lịch của tôi</title>
+  <title>Bản đồ du lịch của tôi — nền vệ tinh</title>
 
   <!-- Leaflet & MarkerCluster -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -21,7 +21,7 @@
     .topbar{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:center;z-index:5000}
     .card{background:var(--panel);border:1px solid #22304b;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.35);padding:10px}
     .control{display:flex;gap:8px;align-items:center}
-    .control input,.control select{background:#0f1626;border:1px solid #26334f;color:white;border-radius:12px;padding:10px 12px}
+    .control input{background:#0f1626;border:1px solid #26334f;color:white;border-radius:12px;padding:10px 12px}
     .btn{cursor:pointer;border:none;background:#1e293b;color:#e2e8f0;border-radius:12px;padding:10px 12px;font-weight:600}
     .btn:hover{filter:brightness(1.12)}
     .btn.primary{background:var(--accent);color:#031523}
@@ -84,46 +84,40 @@
       </div>
     </div>
 
-    <div class="legend card">Nguồn nền: OSM, Stamen, Carto (miễn phí) | Cụm điểm: MarkerCluster</div>
+    <div class="legend card">
+      Nền vệ tinh: Esri World Imagery • Dự phòng: OpenStreetMap • Cụm điểm: MarkerCluster
+    </div>
     <div id="toast" class="toast hidden"></div>
   </div>
 
   <script>
     // ======= CONFIG =======
     const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw49kScp3TgL8Q_-fcsjowKy5piudn1mYvkPwmE4buHSJs76wHX_ltE_xjpHPTAPAE2/exec';
-    const TOKEN = 'abc123';
+    const TOKEN = 'abc123'; // nếu không dùng, để chuỗi rỗng
 
     // ======= MAP INIT =======
     const map = L.map('map', { zoomControl: false }).setView([16.08, 108.22], 5);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // ===== NỀN BẢN ĐỒ MIỄN PHÍ (KHÔNG CẦN API KEY) =====
-    const baseLayers = {
-      'OpenStreetMap Standard': L.tileLayer(
-        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
-      ),
+    // Nền bản đồ: Esri vệ tinh (mặc định) + OSM
+    const esriSat = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri — Source: Esri, Earthstar Geographics, GIS User Community'
+      }
+    ).addTo(map);
 
-      'Stamen Toner (đen trắng)': L.tileLayer(
-        'https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png',
-        { maxZoom: 20, attribution: 'Map tiles by Stamen Design, &copy; OpenStreetMap contributors' }
-      ),
+    const osmStd = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+    );
 
-      'Stamen Watercolor (màu nước)': L.tileLayer(
-        'https://stamen-tiles.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg',
-        { maxZoom: 18, attribution: 'Map tiles by Stamen Design, &copy; OpenStreetMap contributors' }
-      ),
-
-      'Carto Voyager (sáng, chi tiết)': L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        { maxZoom: 20, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }
-      )
-    };
-
-    // Nền mặc định
-    baseLayers['Carto Voyager (sáng, chi tiết)'].addTo(map);
-    // Nút chuyển nền
-    L.control.layers(baseLayers, {}, { position: 'topleft' }).addTo(map);
+    L.control.layers(
+      { 'Esri World Imagery (vệ tinh)': esriSat, 'OpenStreetMap Standard': osmStd },
+      {},
+      { position: 'topleft' }
+    ).addTo(map);
 
     // ======= Marker cluster =======
     const clusters = L.markerClusterGroup({
@@ -170,6 +164,7 @@
         const url = new URL(SHEET_ENDPOINT);
         url.searchParams.set('action','list');
         if (TOKEN) url.searchParams.set('token', TOKEN);
+
         const res = await fetch(url.toString());
         const data = await res.json();
         if(!data.ok) throw new Error(data.error||'Tải dữ liệu thất bại');
